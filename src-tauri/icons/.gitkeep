@@ -1,0 +1,9 @@
+# 图标文件
+请在此目录放置应用图标文件：
+- 32x32.png
+- 128x128.png
+- 128x128@2x.png
+- icon.icns (macOS)
+- icon.ico (Windows)
+
+如果没有图标，Tauri 会使用默认图标。
