@@ -7,10 +7,9 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
-import { marked } from 'marked'
-import mermaid from 'mermaid'
-import hljs from 'highlight.js'
 import 'highlight.js/styles/github-dark.min.css'
+import { renderMarkdownToHtml } from '../render/markdown'
+import { renderMermaidInContainer } from '../render/mermaid'
 
 const props = defineProps({
   content: {
@@ -22,126 +21,21 @@ const props = defineProps({
 const previewRef = ref(null)
 const renderedContent = ref('')
 
-// 通过遍历元素查找匹配的 mermaid 元素（比选择器更可靠）
-const findMermaidElementByCode = (container, targetCode) => {
-  if (!container || !targetCode) return null
-  
-  const allMermaid = container.querySelectorAll('.mermaid')
-  for (const el of allMermaid) {
-    const codeAttr = el.getAttribute('data-mermaid-code')
-    if (codeAttr === targetCode) {
-      return el
-    }
-  }
-  return null
-}
-
 // 防止多次 renderContent 并发执行导致“旧节点写入 / rect=0 / 插入错位”等问题
 let activeRenderId = 0
-
-// 配置 marked
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-  highlight: function(code, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(code, { language: lang }).value
-      } catch (err) {
-        console.error('语法高亮错误:', err)
-      }
-    }
-    return hljs.highlightAuto(code).value
-  }
-})
-
-// 配置 mermaid
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'dark',
-  securityLevel: 'loose',
-  fontFamily: 'inherit',
-  fontSize: 12, // 字体大小设置为 12
-  flowchart: {
-    useMaxWidth: true,
-    htmlLabels: true, // 使用 HTML 标签，允许自动调整大小
-    curve: 'basis',
-    nodeSpacing: 50,
-    rankSpacing: 50,
-    padding: 15, // 增加节点内边距，确保文字有足够空间
-    wrap: true, // 允许文字换行
-    paddingX: 20, // 水平内边距
-    paddingY: 15 // 垂直内边距
-  },
-  themeVariables: {
-    fontSize: '12px',
-    fontFamily: 'inherit',
-    primaryTextColor: '#d4d4d4',
-    primaryBorderColor: '#3c3c3c',
-    lineColor: '#858585',
-    secondaryColor: '#007acc',
-    tertiaryColor: '#1e1e1e',
-    // 增加节点相关尺寸
-    nodeBkg: '#1e1e1e',
-    nodeBorder: '#3c3c3c',
-    clusterBkg: '#1e1e1e',
-    clusterBorder: '#3c3c3c',
-    defaultLinkColor: '#858585',
-    titleColor: '#d4d4d4',
-    edgeLabelBackground: '#1e1e1e',
-    actorBorder: '#3c3c3c',
-    actorBkg: '#1e1e1e',
-    actorTextColor: '#d4d4d4',
-    actorLineColor: '#858585',
-    signalColor: '#d4d4d4',
-    signalTextColor: '#d4d4d4',
-    labelBoxBkgColor: '#1e1e1e',
-    labelBoxBorderColor: '#3c3c3c',
-    labelTextColor: '#d4d4d4',
-    loopTextColor: '#d4d4d4',
-    noteBorderColor: '#3c3c3c',
-    noteBkgColor: '#1e1e1e',
-    noteTextColor: '#d4d4d4',
-    activationBorderColor: '#3c3c3c',
-    activationBkgColor: '#1e1e1e',
-    sequenceNumberColor: '#d4d4d4',
-    sectionBkgColor: '#1e1e1e',
-    altBkgColor: '#1e1e1e',
-    altBorderColor: '#3c3c3c'
-  }
-})
-
-// 自定义渲染器以支持 mermaid
-const renderer = new marked.Renderer()
-
-// 重写代码块渲染，支持 mermaid 和语法高亮
-renderer.code = function(code, language) {
-  if (language === 'mermaid') {
-    // Mermaid 代码块，使用纯文本节点避免 HTML 转义
-    // 注意：不能使用 HTML 实体，需要直接插入文本
-    const trimmedCode = code.trim()
-    // 使用特殊标记，稍后在 DOM 中替换为纯文本
-    return `<div class="mermaid" data-mermaid-code="${encodeURIComponent(trimmedCode)}"></div>`
-  }
-  // 其他代码块使用语法高亮
-  const highlighted = this.options.highlight(code, language || '')
-  return `<pre><code class="hljs language-${language || 'text'}">${highlighted}</code></pre>`
-}
-
-marked.use({ renderer })
 
 const renderContent = async () => {
   const myRenderId = ++activeRenderId
   try {
+    const contentSnapshot = String(props.content ?? '')
     // 如果内容为空，清空预览
-    if (!props.content || props.content.trim() === '') {
+    if (!contentSnapshot || contentSnapshot.trim() === '') {
       renderedContent.value = ''
       return
     }
     
     // 渲染 markdown
-    const contentSnapshot = props.content
-    let html = marked.parse(contentSnapshot)
+    const html = renderMarkdownToHtml(contentSnapshot)
     
     // 先设置 HTML，触发 v-html 更新
     renderedContent.value = html
@@ -161,85 +55,30 @@ const renderContent = async () => {
     
     // 再次确认 previewRef 已经更新
     if (!previewRef.value) {
-      console.error('previewRef.value 不存在！')
       return
     }
     
-    // 验证 previewRef 的内容
-    console.log('previewRef 内容长度:', previewRef.value.innerHTML.length)
-    console.log('previewRef 是否包含 mermaid:', previewRef.value.innerHTML.includes('mermaid'))
-    
-    // 渲染 Mermaid：避免并发/旧节点引用导致的 isConnected=false。
-    // 采用“收集占位符 -> 逐个渲染 -> 用 data-mermaid-code 重新定位 -> 写入 SVG”的稳定流程。
-    const placeholders = Array.from(previewRef.value.querySelectorAll('.mermaid:not([data-processed])'))
-    console.log('找到 Mermaid 元素数量:', placeholders.length)
-
-    for (let i = 0; i < placeholders.length; i++) {
-      if (myRenderId !== activeRenderId || props.content !== contentSnapshot) return
-
-      const codeAttrRaw = placeholders[i].getAttribute('data-mermaid-code')
-      if (!codeAttrRaw) continue
-
-      let code = codeAttrRaw
-      try { code = decodeURIComponent(codeAttrRaw) } catch (_) {}
-
-      code = code
-        .trim()
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&#x27;/g, "'")
-        .replace(/&#x2F;/g, '/')
-
-      if (typeof mermaid.render !== 'function') return
-
-      const id = `mermaid-${Date.now()}-${i}-${myRenderId}`
-      const renderResult = await mermaid.render(id, code)
-      const svgContent = renderResult?.svg || renderResult
-
-      if (myRenderId !== activeRenderId || props.content !== contentSnapshot) return
-
-      const target = findMermaidElementByCode(previewRef.value, codeAttrRaw)
-      if (!target) continue
-
-      target.id = id
-      target.className = 'mermaid'
-      target.innerHTML = svgContent
-      target.setAttribute('data-processed', 'true')
-    }
+    // 渲染 Mermaid：避免并发/旧节点写入，具体逻辑在 render 层封装
+    await renderMermaidInContainer(previewRef.value, {
+      renderId: myRenderId,
+      isStale: () => myRenderId !== activeRenderId || props.content !== contentSnapshot,
+    })
   } catch (error) {
     console.error('渲染错误:', error)
-    renderedContent.value = `<p style="color: #f48771;">渲染错误: ${error.message}</p>`
+    // 安全：避免把未转义的错误信息写入 v-html
+    const msg = String(error?.message ?? '未知错误')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;')
+    renderedContent.value = `<p style="color: #f48771;">渲染错误: ${msg}</p>`
   }
 }
 
-// 使用防抖避免频繁重新渲染
-// 注意：防抖时间应该与 EditorPane 的防抖时间一致（100ms），确保内容同步
-let renderTimer = null
-let lastRenderedContent = '' // 记录上次渲染的内容，避免重复渲染
-
 watch(() => props.content, (newContent) => {
-  // 如果内容没有变化，跳过渲染
-  if (newContent === lastRenderedContent) {
-    return
-  }
-  
-  // 清除定时器
-  if (renderTimer) {
-    clearTimeout(renderTimer)
-  }
-  
-  // 使用防抖延迟渲染，避免在 v-html 更新过程中操作 DOM
-  // 防抖时间与 EditorPane 一致（100ms），确保内容同步
-  renderTimer = setTimeout(() => {
-    // 再次检查内容是否变化（可能在防抖期间内容又变了）
-    if (props.content !== lastRenderedContent) {
-      lastRenderedContent = props.content
-      renderContent()
-    }
-  }, 100) // 与 EditorPane 的防抖时间一致
+  // 预览防抖已上移到 App.vue，这里只做最小的“内容变化即渲染”
+  renderContent()
 }, { immediate: true })
 </script>
 

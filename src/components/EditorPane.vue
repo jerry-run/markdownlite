@@ -34,17 +34,6 @@ const localContent = ref(props.content)
 let editorView = null
 let CodeMirrorModules = null
 
-// 防抖更新函数
-let updateTimer = null
-const debouncedEmit = (content) => {
-  if (updateTimer) {
-    clearTimeout(updateTimer)
-  }
-  updateTimer = setTimeout(() => {
-    emit('update:content', content)
-  }, 100)
-}
-
 // 动态加载 CodeMirror 模块
 const loadCodeMirror = async () => {
   try {
@@ -228,7 +217,7 @@ const createExtensions = () => {
     EditorView.updateListener.of((update) => {
       if (update.docChanged) {
         const content = update.state.doc.toString()
-        debouncedEmit(content)
+        emit('update:content', content)
       }
     }),
     
@@ -315,8 +304,10 @@ const initEditor = async () => {
   
   try {
     const { EditorView, EditorState } = CodeMirrorModules
+    // 确保 content 是字符串，防止 ref 对象传入
+    const contentStr = String(props.content ?? '')
     const state = EditorState.create({
-      doc: props.content,
+      doc: contentStr,
       extensions: createExtensions()
     })
     
@@ -383,9 +374,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (updateTimer) {
-    clearTimeout(updateTimer)
-  }
   if (editorView) {
     editorView.destroy()
     editorView = null
