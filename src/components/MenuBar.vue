@@ -103,10 +103,11 @@ defineExpose({
   display: flex;
   align-items: center;
   padding: 8px 16px;
-  background: #f5f5f5;
-  border-bottom: 1px solid #ddd;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
   gap: 16px;
   user-select: none;
+  color: var(--text);
 }
 
 .menu-item {
@@ -118,10 +119,11 @@ defineExpose({
   border-radius: 4px;
   transition: background 0.2s;
   font-size: 14px;
+  color: var(--text);
 }
 
 .menu-item:hover:not(.disabled) {
-  background: #e0e0e0;
+  background: var(--panel-2);
 }
 
 .menu-item.disabled {

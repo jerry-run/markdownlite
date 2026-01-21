@@ -62,6 +62,8 @@ const handleSave = async (filePath) => {
   flex-direction: column;
   height: 100vh;
   width: 100vw;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .main-content {

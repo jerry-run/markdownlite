@@ -12,6 +12,13 @@
   "dependencies": {
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-fs": "^2.0.0",
+    "@codemirror/view": "^6.21.3",
+    "@codemirror/state": "^6.2.1",
+    "@codemirror/lang-markdown": "^6.2.4",
+    "@codemirror/language": "^6.9.1",
+    "@codemirror/commands": "^6.2.4",
+    "@codemirror/search": "^6.5.4",
+    "@lezer/highlight": "^1.1.6",
     "marked": "^11.1.1",
     "mermaid": "^10.9.0",
     "vue": "^3.4.15",
