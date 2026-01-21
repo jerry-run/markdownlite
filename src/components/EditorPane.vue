@@ -354,13 +354,26 @@ const handleInput = (e) => {
 }
 
 // 监听外部内容变化
+// 使用防抖避免循环更新
+let watchTimer = null
 watch(() => props.content, (newVal) => {
   if (error.value) {
     localContent.value = newVal
   } else if (editorView) {
     const currentContent = editorView.state.doc.toString()
+    // 只有在内容真正不同时才更新，避免循环更新
     if (currentContent !== newVal) {
-      updateContent(newVal)
+      // 清除之前的定时器
+      if (watchTimer) {
+        clearTimeout(watchTimer)
+      }
+      // 使用小延迟确保 EditorView 的更新已完成
+      watchTimer = setTimeout(() => {
+        const stillCurrentContent = editorView.state.doc.toString()
+        if (stillCurrentContent !== newVal) {
+          updateContent(newVal)
+        }
+      }, 10)
     }
   }
 })

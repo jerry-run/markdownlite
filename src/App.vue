@@ -20,7 +20,10 @@ import MenuBar from './components/MenuBar.vue'
 import EditorPane from './components/EditorPane.vue'
 import PreviewPane from './components/PreviewPane.vue'
 
-const content = ref('# 欢迎使用 MarkdownLite\n\n这是一个支持 Markdown 和 Mermaid 的编辑器。\n\n## Mermaid 示例\n\n```mermaid\ngraph TD\n    A[开始] --> B{判断条件}\n    B -->|是| C[执行操作]\n    B -->|否| D[结束]\n    C --> D\n```')
+// 默认示例文档（从 Markdown 文件原样加载，避免模板字符串转义导致的渲染不一致）
+import defaultContent from './default-content.md?raw'
+
+const content = ref(defaultContent)
 
 const currentFilePath = ref(null)
 const menuBarRef = ref(null)
