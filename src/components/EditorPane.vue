@@ -26,7 +26,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:content'])
+const emit = defineEmits(['update:content', 'scroll'])
 
 const editorContainer = ref(null)
 const error = ref(null)
@@ -369,11 +369,174 @@ watch(() => props.content, (newVal) => {
   }
 })
 
+// 滚动同步：计算当前视口对应的行号并通知预览窗格
+// 使用 requestAnimationFrame 实现流畅的滚动同步
+let scrollSyncRafId = null
+let lastScrollInfo = null
+let lastScrollTime = 0
+const SCROLL_THROTTLE_MS = 16 // 限制滚动计算频率，约 60fps
+
+const handleScroll = () => {
+  if (!editorView || !CodeMirrorModules) return
+  
+  // 节流：限制滚动计算频率
+  const now = Date.now()
+  if (now - lastScrollTime < SCROLL_THROTTLE_MS) {
+    return
+  }
+  lastScrollTime = now
+  
+  // 取消之前的 RAF
+  if (scrollSyncRafId !== null) {
+    cancelAnimationFrame(scrollSyncRafId)
+  }
+  
+  // 使用 requestAnimationFrame 实现流畅同步
+  scrollSyncRafId = requestAnimationFrame(() => {
+    try {
+      // 检查编辑器是否仍然有效
+      if (!editorView || !CodeMirrorModules) {
+        scrollSyncRafId = null
+        return
+      }
+      
+      const { EditorView } = CodeMirrorModules
+      if (!EditorView || !editorView || !editorView.scrollDOM) {
+        scrollSyncRafId = null
+        return
+      }
+      
+      const scrollDOM = editorView.scrollDOM
+      if (!scrollDOM) {
+        scrollSyncRafId = null
+        return
+      }
+      
+      const scrollTop = scrollDOM.scrollTop
+      const scrollHeight = scrollDOM.scrollHeight
+      const clientHeight = scrollDOM.clientHeight
+      
+      // 防止除零错误
+      if (scrollHeight <= clientHeight) {
+        scrollSyncRafId = null
+        return
+      }
+      
+      const scrollRatio = scrollTop / (scrollHeight - clientHeight)
+      
+      // 快速计算：优先使用滚动比例，减少复杂计算
+      // 只在必要时使用精确的行号计算
+      let lineNumber = null
+      
+      // 尝试快速获取行号（使用缓存或简化计算）
+      // 使用 try-catch 包裹，确保即使出错也不影响编辑器
+      try {
+        // 检查编辑器状态是否有效
+        if (!editorView.state || !editorView.state.doc) {
+          throw new Error('编辑器状态无效')
+        }
+        
+        const contentDOM = editorView.contentDOM
+        if (contentDOM && typeof editorView.posAtCoords === 'function') {
+          // 使用简化的坐标计算，减少 getBoundingClientRect 调用
+          const scrollRect = scrollDOM.getBoundingClientRect()
+          const contentRect = contentDOM.getBoundingClientRect()
+          
+          // 检查坐标是否有效
+          if (!scrollRect || !contentRect) {
+            throw new Error('无法获取元素位置')
+          }
+          
+          // 计算视口顶部在文档中的坐标（简化版）
+          const viewportTopX = contentRect.left - scrollRect.left + scrollRect.width / 2
+          const viewportTopY = scrollRect.top + scrollTop + 16 // padding
+          
+          // 使用 CodeMirror API 获取该坐标对应的文档位置
+          // 添加额外的错误检查
+          const pos = editorView.posAtCoords({ x: viewportTopX, y: viewportTopY })
+          
+          if (pos !== null && typeof pos === 'number' && pos >= 0) {
+            try {
+              const line = editorView.state.doc.lineAt(pos)
+              if (line && typeof line.number === 'number') {
+                lineNumber = line.number
+              }
+            } catch (lineError) {
+              // 行号计算失败，使用滚动比例
+            }
+          }
+        }
+      } catch (e) {
+        // 如果精确计算失败，使用滚动比例估算
+        // 静默处理，不输出错误
+      }
+      
+      // 如果无法获取精确行号，使用滚动比例估算
+      if (lineNumber === null) {
+        try {
+          const totalLines = editorView.state.doc.lines
+          if (totalLines > 0) {
+            lineNumber = Math.max(1, Math.min(Math.floor(scrollRatio * totalLines), totalLines))
+          } else {
+            lineNumber = 1
+          }
+        } catch (e) {
+          lineNumber = 1
+        }
+      }
+      
+      // 创建滚动信息对象
+      const scrollInfo = {
+        lineNumber,
+        scrollTop,
+        scrollRatio: scrollRatio
+      }
+      
+      // 只在信息变化时发出事件，避免重复触发
+      if (!lastScrollInfo || 
+          lastScrollInfo.lineNumber !== scrollInfo.lineNumber ||
+          Math.abs(lastScrollInfo.scrollTop - scrollInfo.scrollTop) > 5) {
+        lastScrollInfo = scrollInfo
+        emit('scroll', scrollInfo)
+      }
+    } catch (error) {
+      // 静默处理错误，避免影响编辑体验
+      // 不输出到控制台，避免错误日志污染
+    } finally {
+      scrollSyncRafId = null
+    }
+  })
+}
+
 onMounted(() => {
-  initEditor()
+  initEditor().then(() => {
+    // 编辑器初始化完成后，添加滚动监听
+    // 使用延迟确保编辑器完全初始化
+    setTimeout(() => {
+      try {
+        if (editorView && editorView.scrollDOM) {
+          editorView.scrollDOM.addEventListener('scroll', handleScroll, { passive: true })
+        }
+      } catch (error) {
+        // 滚动监听添加失败不影响编辑器使用
+        console.debug('添加滚动监听失败:', error)
+      }
+    }, 100)
+  }).catch((error) => {
+    console.error('编辑器初始化失败:', error)
+  })
 })
 
 onBeforeUnmount(() => {
+  // 清理滚动监听
+  if (editorView && editorView.scrollDOM) {
+    editorView.scrollDOM.removeEventListener('scroll', handleScroll)
+  }
+  if (scrollSyncRafId !== null) {
+    cancelAnimationFrame(scrollSyncRafId)
+    scrollSyncRafId = null
+  }
+  
   if (editorView) {
     editorView.destroy()
     editorView = null

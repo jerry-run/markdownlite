@@ -94,19 +94,61 @@ export async function renderMermaidInContainer(container, { renderId, isStale } 
       .replace(/&#x27;/g, "'")
       .replace(/&#x2F;/g, '/')
 
-    const id = `mermaid-${Date.now()}-${i}-${renderId ?? 0}`
-    const renderResult = await mermaid.render(id, code)
-    const svgContent = renderResult?.svg || renderResult
-
-    if (typeof isStale === 'function' && isStale()) return
-
     const target = findMermaidElementByCode(container, codeAttrRaw)
     if (!target) continue
 
-    target.id = id
-    target.className = 'mermaid'
-    target.innerHTML = svgContent
-    target.setAttribute('data-processed', 'true')
+    // 对每个 Mermaid 块单独进行错误处理，避免一个错误影响整个预览
+    try {
+      const id = `mermaid-${Date.now()}-${i}-${renderId ?? 0}`
+      const renderResult = await mermaid.render(id, code)
+      const svgContent = renderResult?.svg || renderResult
+
+      if (typeof isStale === 'function' && isStale()) return
+
+      // 再次确认 target 仍然存在（可能在渲染过程中被移除）
+      const currentTarget = findMermaidElementByCode(container, codeAttrRaw)
+      if (!currentTarget) continue
+
+      currentTarget.id = id
+      currentTarget.className = 'mermaid'
+      currentTarget.innerHTML = svgContent
+      currentTarget.setAttribute('data-processed', 'true')
+    } catch (error) {
+      // 单个 Mermaid 块渲染失败，只在该块位置显示错误信息
+      console.error(`Mermaid 渲染失败 (块 ${i}):`, error)
+      
+      // 再次确认 target 仍然存在
+      const currentTarget = findMermaidElementByCode(container, codeAttrRaw)
+      if (!currentTarget) continue
+
+      // 转义错误信息，防止 XSS
+      const errorMsg = String(error?.message ?? 'Mermaid 语法错误')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+      
+      // 显示错误信息，但保留 Mermaid 容器的样式
+      currentTarget.className = 'mermaid mermaid-error'
+      currentTarget.innerHTML = `
+        <div style="
+          padding: 16px;
+          background: var(--panel-2, #2d2d2d);
+          border: 1px solid var(--border, #3c3c3c);
+          border-radius: 6px;
+          color: #f48771;
+          font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+          font-size: 13px;
+          line-height: 1.6;
+        ">
+          <div style="font-weight: 600; margin-bottom: 8px;">⚠️ Mermaid 渲染错误</div>
+          <div style="color: var(--muted, #9da2a6);">${errorMsg}</div>
+        </div>
+      `
+      currentTarget.setAttribute('data-processed', 'true')
+      currentTarget.setAttribute('data-error', 'true')
+    }
   }
 }
 

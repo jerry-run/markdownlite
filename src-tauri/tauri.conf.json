@@ -1,6 +1,6 @@
 {
   "productName": "MarkdownLite",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "identifier": "com.markdownlite.app",
   "build": {
     "beforeDevCommand": "npm run dev",

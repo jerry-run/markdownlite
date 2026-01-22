@@ -12,8 +12,8 @@
       @clear-recent="handleClearRecent"
     />
     <div class="main-content">
-      <EditorPane :content="editorContent" @update:content="handleContentUpdate" />
-      <PreviewPane :content="previewContent" />
+      <EditorPane :content="editorContent" @update:content="handleContentUpdate" @scroll="handleEditorScroll" />
+      <PreviewPane :content="previewContent" :scroll-info="scrollInfo" />
     </div>
   </div>
 </template>
@@ -29,6 +29,7 @@ import { useDocument } from './stores/useDocument'
 import defaultContent from './default-content.md?raw'
 
 const menuBarRef = ref(null)
+const scrollInfo = ref(null)
 
 const doc = useDocument({ initialContent: defaultContent, debounceMs: 100 })
 
@@ -50,6 +51,10 @@ watchEffect(() => {
 
 const handleContentUpdate = (next) => {
   doc.setContent(next)
+}
+
+const handleEditorScroll = (info) => {
+  scrollInfo.value = info
 }
 
 const handleOpenFile = async () => {
